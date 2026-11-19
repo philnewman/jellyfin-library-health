@@ -19,7 +19,8 @@
             #LibraryHealthPage .lh-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
             #LibraryHealthPage .lh-text a { color: inherit; font-weight: 600; }
             #LibraryHealthPage .lh-detail { opacity: .85; font-size: .95em; }
-            #LibraryHealthPage .lh-row button { flex: none; margin: 0; font-size: .85em; padding: .3em .8em; }
+            #LibraryHealthPage .lh-row button, #LibraryHealthPage .lh-more button { flex: none; margin: 0; font: inherit; font-size: .85em; padding: .35em .9em; color: inherit; background: rgba(128,128,128,.22); border: 0; border-radius: .3em; cursor: pointer; }
+            #LibraryHealthPage .lh-row button:hover, #LibraryHealthPage .lh-more button:hover { background: rgba(128,128,128,.38); }
             #LibraryHealthPage .lh-more { padding: .6em 1em; }
         </style>
         <div data-role="content">
@@ -141,7 +142,7 @@
                         items.slice(0, limit).forEach(function (f) { d.appendChild(row(f)); });
                         if (items.length > limit) {
                             var more = el('div', 'lh-more');
-                            var btn = el('button', 'emby-button', 'Show ' + Math.min(PAGE_SIZE, items.length - limit) + ' more of ' + (items.length - limit));
+                            var btn = el('button', null, 'Show ' + Math.min(PAGE_SIZE, items.length - limit) + ' more of ' + (items.length - limit));
                             btn.type = 'button';
                             btn.addEventListener('click', function () { shown[k[0]] = limit + PAGE_SIZE; render(); });
                             more.appendChild(btn);
@@ -173,7 +174,7 @@
                     text.appendChild(el('div', 'lh-detail', pick(f, 'Detail')));
                     r.appendChild(text);
 
-                    var btn = el('button', 'emby-button', dismissed ? 'Show again' : 'Not a problem');
+                    var btn = el('button', null, dismissed ? 'Show again' : 'Not a problem');
                     btn.type = 'button';
                     btn.addEventListener('click', function () {
                         btn.disabled = true;

@@ -196,7 +196,7 @@ public class HealthScanner
         {
             var shown = clashes.Take(4).Select(g => string.Create(
                 CultureInfo.InvariantCulture,
-                $"disc {g.Key.Disc} track {g.Key.Track}: {string.Join(" / ", g.Select(t => Quote(t.Name)))}"));
+                $"disc {g.Key.Disc} track {g.Key.Track}: {string.Join(" / ", g.Take(3).Select(t => Quote(t.Name)))}{(g.Count() > 3 ? $" and {g.Count() - 3} more" : string.Empty)}"));
             findings.Add(new Finding(
                 "track-clash",
                 key,
