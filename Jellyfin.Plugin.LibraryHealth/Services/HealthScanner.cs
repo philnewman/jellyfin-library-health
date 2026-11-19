@@ -100,10 +100,10 @@ public class HealthScanner
         {
             albums.TryGetValue(group.Key, out var album);
             CheckAlbum(album, group.ToList(), findings);
+            CheckTitles(album, group.ToList(), findings);
         }
 
         CheckMisfiled(tracks, roots, shared, findings);
-        CheckTitles(tracks, findings);
         foreach (var album in albums.Values)
         {
             if (!album.HasImage(ImageType.Primary, 0))
@@ -156,6 +156,13 @@ public class HealthScanner
                 .Select(n => new { Name = n, Count = trackCounts.GetValueOrDefault(n) })
                 .OrderByDescending(s => s.Count)
                 .ToList();
+            // Empty leftover entries can't be fixed (and artists must never be deleted), so only
+            // report names where at least two spellings are really in use.
+            if (spellings.Count(x => x.Count > 0) < 2)
+            {
+                continue;
+            }
+
             var main = spellings[0];
             var detail = string.Join(", ", spellings.Select(s => string.Create(
                 CultureInfo.InvariantCulture,
@@ -181,7 +188,7 @@ public class HealthScanner
 
         var clashes = tracks
             .Where(t => t.IndexNumber is > 0)
-            .GroupBy(t => (Disc: t.ParentIndexNumber ?? 1, Track: t.IndexNumber!.Value))
+            .GroupBy(t => (Disc: t.ParentIndexNumber is null or 0 ? 1 : t.ParentIndexNumber.Value, Track: t.IndexNumber!.Value))
             .Where(g => g.Count() > 1)
             .OrderBy(g => g.Key.Disc).ThenBy(g => g.Key.Track)
             .ToList();
@@ -319,34 +326,53 @@ public class HealthScanner
         }
     }
 
-    private static void CheckTitles(List<AudioItem> tracks, List<Finding> findings)
+    // Garbled titles, one finding per album so a badly ripped album is one entry, not twenty.
+    private static void CheckTitles(MusicAlbum? album, List<AudioItem> tracks, List<Finding> findings)
     {
+        var problems = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var t in tracks)
         {
             var name = t.Name ?? string.Empty;
             string? problem = null;
             if (name.Length > 0 && name != name.Trim())
             {
-                problem = "Title has extra spaces at the start or end.";
+                problem = "extra spaces at the start or end";
             }
             else if (UnderscoreApostrophe.IsMatch(name))
             {
-                problem = "Title has an underscore where an apostrophe belongs.";
+                problem = "an underscore where an apostrophe belongs";
             }
             else if (CopySuffix.IsMatch(name))
             {
-                problem = "Title ends in a copy number like \"(2)\".";
+                problem = "a copy number like \"(2)\"";
             }
             else if (FileNameTitle.IsMatch(name))
             {
-                problem = "Title looks like a file name.";
+                problem = "a file name as the title";
             }
 
             if (problem is not null)
             {
-                findings.Add(new Finding("title", t.Id.ToString("N"), t.Id, TrackLabel(t), problem));
+                if (!problems.TryGetValue(problem, out var list))
+                {
+                    problems[problem] = list = new List<string>();
+                }
+
+                list.Add(Quote(name));
             }
         }
+
+        if (problems.Count == 0)
+        {
+            return;
+        }
+
+        var first = tracks[0];
+        var linkId = album?.Id ?? first.Id;
+        var label = album is not null ? AlbumLabel(album) : (string.IsNullOrEmpty(first.Album) ? TrackLabel(first) : first.Album);
+        var detail = string.Join("; ", problems.Select(p =>
+            Of(p.Value.Count, tracks.Count) + " with " + p.Key + " (" + string.Join(", ", p.Value.Take(3)) + (p.Value.Count > 3 ? ", …" : string.Empty) + ")"));
+        findings.Add(new Finding("title", linkId.ToString("N"), linkId, label, char.ToUpperInvariant(detail[0]) + detail.Substring(1) + "."));
     }
 
     private static IEnumerable<string> TrackArtists(AudioItem t)
