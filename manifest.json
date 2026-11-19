@@ -7,6 +7,15 @@
     "owner": "philnewman",
     "category": "General",
     "imageUrl": "",
-    "versions": []
+    "versions": [
+      {
+        "version": "0.1.0.0",
+        "changelog": "See https://github.com/philnewman/jellyfin-library-health/releases/tag/v0.1.0",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/philnewman/jellyfin-library-health/releases/download/v0.1.0/jellyfin-plugin-library-health.zip",
+        "checksum": "16b9a80028877c5602d97f57bf76b124",
+        "timestamp": "2026-11-19T17:00:17Z"
+      }
+    ]
   }
 ]
