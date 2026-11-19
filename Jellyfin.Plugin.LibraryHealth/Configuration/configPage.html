@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Library Health</title>
+</head>
+<body>
+    <div id="LibraryHealthPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+        <style>
+            #LibraryHealthPage .lh-bar { display: flex; flex-wrap: wrap; gap: .75em; align-items: center; margin: 1em 0; }
+            #LibraryHealthPage .lh-bar .inputContainer, #LibraryHealthPage .lh-bar .checkboxContainer { margin: 0; }
+            #LibraryHealthPage .lh-summary { opacity: .8; margin: .25em 0 1em; }
+            #LibraryHealthPage details.lh-section { margin: .5em 0; border-radius: .3em; background: rgba(128,128,128,.08); }
+            #LibraryHealthPage details.lh-section > summary { cursor: pointer; padding: .7em 1em; font-size: 1.1em; }
+            #LibraryHealthPage .lh-count { display: inline-block; min-width: 2.2em; text-align: center; margin-right: .6em; padding: .05em .4em; border-radius: 1em; background: rgba(128,128,128,.25); font-size: .9em; }
+            #LibraryHealthPage .lh-help { padding: 0 1em .5em; opacity: .75; }
+            #LibraryHealthPage .lh-row { display: flex; gap: 1em; align-items: flex-start; padding: .55em 1em; border-top: 1px solid rgba(128,128,128,.18); }
+            #LibraryHealthPage .lh-row.lh-dismissed { opacity: .45; }
+            #LibraryHealthPage .lh-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+            #LibraryHealthPage .lh-text a { color: inherit; font-weight: 600; }
+            #LibraryHealthPage .lh-detail { opacity: .85; font-size: .95em; }
+            #LibraryHealthPage .lh-row button { flex: none; margin: 0; font-size: .85em; padding: .3em .8em; }
+            #LibraryHealthPage .lh-more { padding: .6em 1em; }
+        </style>
+        <div data-role="content">
+            <div class="content-primary">
+                <div class="verticalSection">
+                    <h2 class="sectionTitle">Library Health</h2>
+                    <p>Metadata problems in your music library. This page only reports; fix things in the album or track's own editor. Use <b>Not a problem</b> to hide something you've decided to keep as it is.</p>
+                </div>
+                <div class="lh-bar">
+                    <button is="emby-button" type="button" id="LhRescan" class="raised button-submit"><span>Scan again</span></button>
+                    <div class="inputContainer" style="flex:1;min-width:14em">
+                        <input is="emby-input" type="search" id="LhFilter" label="Filter by artist, album or title" />
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input type="checkbox" is="emby-checkbox" id="LhShowDismissed" />
+                            <span>Show hidden</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="LhSummary" class="lh-summary">Scanning…</div>
+                <div id="LhSections"></div>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var page = document.querySelector('#LibraryHealthPage');
+                var PAGE_SIZE = 50;
+                var KINDS = [
+                    ['artist-name', 'Artist spelled more than one way', 'Each spelling shows up as a separate artist. Pick one and use it on every track and album. Entries with no tracks are empty leftovers: leave them, never delete an artist.'],
+                    ['album-name', "Album name doesn't match its tracks", "The album's own name differs from the album name on its tracks, often a stale name from an earlier tag."],
+                    ['album-artist', "Album artist doesn't match its tracks", 'None of the tracks credit the album artist.'],
+                    ['track-clash', 'Track numbers used twice', 'Two or more tracks claim the same disc and track number.'],
+                    ['track-number', 'Missing track numbers', 'Tracks with no track number (or 0) play in the wrong order.'],
+                    ['no-artist', 'Tracks with no artist', 'These tracks have an empty artist.'],
+                    ['duplicate', 'Possible duplicates', 'Same title and nearly the same length in one album. Live albums and remasters can do this on purpose, so compare the files first.'],
+                    ['misfiled', 'Misfiled tracks', "Tracks whose folder belongs to a different artist, or that sit loose at the top of the library."],
+                    ['title', 'Garbled titles', 'Underscores for apostrophes, copy numbers like "(2)", extra spaces, or a file name used as the title.'],
+                    ['artwork', 'Albums without cover art', 'No primary image.'],
+                    ['genre-year', 'Missing genre or year', 'Least urgent: affects browsing by genre and year.']
+                ];
+                var report = null;
+                var shown = {};
+
+                function pick(o, name) {
+                    if (!o) return undefined;
+                    var lower = name.charAt(0).toLowerCase() + name.slice(1);
+                    return o[name] !== undefined ? o[name] : o[lower];
+                }
+
+                function call(path, method) {
+                    return fetch(ApiClient.getUrl(path), {
+                        method: method || 'GET',
+                        headers: { Authorization: 'MediaBrowser Token="' + ApiClient.accessToken() + '"' }
+                    }).then(function (r) {
+                        if (!r.ok) throw new Error(path + ' returned ' + r.status);
+                        return r.status === 204 ? null : r.json();
+                    });
+                }
+
+                function el(tag, cls, text) {
+                    var e = document.createElement(tag);
+                    if (cls) e.className = cls;
+                    if (text !== undefined) e.textContent = text;
+                    return e;
+                }
+
+                function load(rescan) {
+                    page.querySelector('#LhSummary').textContent = rescan ? 'Scanning…' : 'Loading…';
+                    page.querySelector('#LhRescan').disabled = true;
+                    return call('LibraryHealth/Report' + (rescan ? '?rescan=true' : '')).then(function (r) {
+                        report = r;
+                        render();
+                    }).catch(function (e) {
+                        page.querySelector('#LhSummary').textContent = 'Could not load the report: ' + e.message;
+                    }).then(function () {
+                        page.querySelector('#LhRescan').disabled = false;
+                    });
+                }
+
+                function render() {
+                    if (!report) return;
+                    var filter = page.querySelector('#LhFilter').value.trim().toLowerCase();
+                    var showHidden = page.querySelector('#LhShowDismissed').checked;
+                    var all = pick(report, 'Findings') || [];
+                    var open = all.filter(function (f) { return !pick(f, 'Dismissed'); }).length;
+                    var when = new Date(pick(report, 'GeneratedAt'));
+                    page.querySelector('#LhSummary').textContent =
+                        open + ' problems in ' + pick(report, 'TrackCount').toLocaleString() + ' tracks, ' +
+                        pick(report, 'AlbumCount').toLocaleString() + ' albums' +
+                        (all.length > open ? ' (' + (all.length - open) + ' hidden)' : '') +
+                        '. Scanned ' + when.toLocaleString() + '.';
+
+                    var host = page.querySelector('#LhSections');
+                    var wasOpen = {};
+                    host.querySelectorAll('details').forEach(function (d) { if (d.open) wasOpen[d.dataset.kind] = true; });
+                    host.textContent = '';
+
+                    KINDS.forEach(function (k) {
+                        var items = all.filter(function (f) {
+                            if (pick(f, 'Kind') !== k[0]) return false;
+                            if (pick(f, 'Dismissed') && !showHidden) return false;
+                            if (filter && (pick(f, 'Label') + ' ' + pick(f, 'Detail')).toLowerCase().indexOf(filter) < 0) return false;
+                            return true;
+                        });
+                        if (!items.length) return;
+                        items.sort(function (a, b) { return pick(a, 'Label').localeCompare(pick(b, 'Label')); });
+
+                        var d = el('details', 'lh-section');
+                        d.dataset.kind = k[0];
+                        d.open = !!wasOpen[k[0]] || !!filter;
+                        var s = el('summary');
+                        s.appendChild(el('span', 'lh-count', String(items.length)));
+                        s.appendChild(document.createTextNode(k[1]));
+                        d.appendChild(s);
+                        d.appendChild(el('div', 'lh-help', k[2]));
+
+                        var limit = shown[k[0]] || PAGE_SIZE;
+                        items.slice(0, limit).forEach(function (f) { d.appendChild(row(f)); });
+                        if (items.length > limit) {
+                            var more = el('div', 'lh-more');
+                            var btn = el('button', 'emby-button', 'Show ' + Math.min(PAGE_SIZE, items.length - limit) + ' more of ' + (items.length - limit));
+                            btn.type = 'button';
+                            btn.addEventListener('click', function () { shown[k[0]] = limit + PAGE_SIZE; render(); });
+                            more.appendChild(btn);
+                            d.appendChild(more);
+                        }
+                        host.appendChild(d);
+                    });
+
+                    if (!host.children.length) {
+                        host.appendChild(el('p', null, filter ? 'Nothing matches the filter.' : 'No problems found.'));
+                    }
+                }
+
+                function row(f) {
+                    var dismissed = !!pick(f, 'Dismissed');
+                    var r = el('div', 'lh-row' + (dismissed ? ' lh-dismissed' : ''));
+                    var text = el('div', 'lh-text');
+                    var id = pick(f, 'ItemId');
+                    var label;
+                    if (id) {
+                        label = el('a', null, pick(f, 'Label'));
+                        label.href = location.pathname + '#/details?id=' + id + '&serverId=' + ApiClient.serverId();
+                        label.target = '_blank';
+                        label.rel = 'noopener';
+                    } else {
+                        label = el('span', null, pick(f, 'Label'));
+                    }
+                    text.appendChild(label);
+                    text.appendChild(el('div', 'lh-detail', pick(f, 'Detail')));
+                    r.appendChild(text);
+
+                    var btn = el('button', 'emby-button', dismissed ? 'Show again' : 'Not a problem');
+                    btn.type = 'button';
+                    btn.addEventListener('click', function () {
+                        btn.disabled = true;
+                        call('LibraryHealth/Dismissed?key=' + encodeURIComponent(pick(f, 'Key')) + '&dismissed=' + (!dismissed), 'POST').then(function () {
+                            f.Dismissed = !dismissed;
+                            f.dismissed = !dismissed;
+                            render();
+                        }).catch(function (e) {
+                            btn.disabled = false;
+                            Dashboard.alert('Could not save: ' + e.message);
+                        });
+                    });
+                    r.appendChild(btn);
+                    return r;
+                }
+
+                var timer = null;
+                page.querySelector('#LhFilter').addEventListener('input', function () {
+                    clearTimeout(timer);
+                    timer = setTimeout(function () { shown = {}; render(); }, 200);
+                });
+                page.querySelector('#LhShowDismissed').addEventListener('change', render);
+                page.querySelector('#LhRescan').addEventListener('click', function () { load(true); });
+                page.addEventListener('pageshow', function () { load(false); });
+            })();
+        </script>
+    </div>
+</body>
+</html>

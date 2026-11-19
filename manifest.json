@@ -1,0 +1,12 @@
+[
+  {
+    "guid": "e9b98148-8743-4071-8b64-f774ec8813d0",
+    "name": "Library Health",
+    "description": "Scans your music library and lists metadata problems: artist names spelled several ways, missing or clashing track numbers, tracks with no artist, albums whose details don't match their tracks, misfiled tracks, garbled titles, possible duplicates, missing artwork and missing genre or year. It only reports; it never changes your library.",
+    "overview": "A read-only health report for your music library",
+    "owner": "philnewman",
+    "category": "General",
+    "imageUrl": "",
+    "versions": []
+  }
+]
