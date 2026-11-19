@@ -49,4 +49,4 @@ dotnet publish Jellyfin.Plugin.LibraryHealth -c Release -o out
 
 ## License
 
-MIT
+GPL-3.0, because the plugin builds on Jellyfin's GPL-3.0 libraries. See [LICENSE](LICENSE).
